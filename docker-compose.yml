@@ -1,0 +1,52 @@
+# Definicja naszych "serwisów" (kontenerów), czyli plan imprezy
+services:
+  # Serwis nr 1: Baza danych PostgreSQL
+  db:
+    # Używamy gotowego, oficjalnego obrazu PostgreSQL
+    image: postgres:15-alpine
+    # Wolumeny to sposób na zapisywanie danych bazy danych na stałe.
+    # Dzięki temu, nawet jak wyłączymy kontener, dane nie znikną.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    # Zmienne środowiskowe potrzebne do uruchomienia bazy danych
+    environment:
+      - POSTGRES_USER=booking_user
+      - POSTGRES_PASSWORD=booking_password
+      - POSTGRES_DB=booking_db
+    # Opcjonalnie: udostępniamy port bazy danych na zewnątrz, aby móc się do niej podłączyć
+    ports:
+      - "5432:5432"
+
+  # Serwis nr 2: Nasza aplikacja Django
+  app:
+    # Mówimy docker-compose, żeby zbudował ten serwis na podstawie pliku Dockerfile
+    # znajdującego się w bieżącym folderze (kropka).
+    build: .
+    # Komenda, która ma zostać wykonana po uruchomieniu kontenera.
+    # Uruchamiamy serwer deweloperski Django na porcie 8000, dostępny dla wszystkich adresów.
+    command: python manage.py runserver 0.0.0.0:8000
+    # Wolumeny dla aplikacji. Mapujemy kod z naszego komputera do kontenera.
+    # Dzięki temu zmiany w kodzie w PyCharmie będą natychmiast widoczne w kontenerze.
+    restart: unless-stopped  # <--- DODAJ TĘ LINIĘ
+
+    volumes:
+      - .:/app
+    # Udostępniamy port 8000 z kontenera na nasz komputer.
+    ports:
+      - "8000:8000"
+    # Zmienne środowiskowe dla naszej aplikacji Django.
+    # Będziemy ich używać w settings.py do połączenia z bazą danych.
+    environment:
+      - DB_NAME=booking_db
+      - DB_USER=booking_user
+      - DB_PASSWORD=booking_password
+      - DB_HOST=db # WAŻNE: 'db' to nazwa naszego serwisu bazy danych powyżej
+      - DB_PORT=5432
+    # Mówimy, że nasz serwis 'app' jest zależny od serwisu 'db'.
+    # Docker-compose najpierw uruchomi bazę danych, a dopiero potem naszą aplikację.
+    depends_on:
+      - db
+
+# Definicja wolumenu, którego użyliśmy dla bazy danych
+volumes:
+  postgres_data:
