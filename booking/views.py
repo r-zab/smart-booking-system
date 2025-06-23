@@ -1,14 +1,21 @@
-from rest_framework import viewsets, response
+# booking/views.py
+
+# --- Imports z bibliotek standardowych ---
+import re
+from datetime import date
+
+# --- Imports z bibliotek firm trzecich ---
+from dateparser.search import search_dates
+from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated  # <--- NOWY IMPORT
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+# --- Imports z naszej aplikacji ---
+from .analysis import prepare_booking_data, train_prediction_model, get_future_predictions
 from .models import Resource, Booking
 from .serializers import ResourceSerializer, BookingSerializer
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from .analysis import prepare_booking_data, train_prediction_model, get_future_predictions
-import re
-from dateparser.search import search_dates
-
 
 class ResourceViewSet(viewsets.ModelViewSet):  # <--- JEDYNA ZMIANA JEST TUTAJ
     """
@@ -25,7 +32,7 @@ class ResourceViewSet(viewsets.ModelViewSet):  # <--- JEDYNA ZMIANA JEST TUTAJ
         """
         latest_resources = Resource.objects.order_by('-id')[:5]
         serializer = self.get_serializer(latest_resources, many=True)
-        return response.Response(serializer.data)
+        return Response(serializer.data)
 
 
 class BookingViewSet(viewsets.ModelViewSet):
