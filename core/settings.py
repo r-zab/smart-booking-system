@@ -39,9 +39,12 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'booking',  # Nasza nowa aplikacja do rezerwacji
     'rest_framework', # Aplikacje firm trzecich
+    'rest_framework.authtoken',
+    'corsheaders', # <--- DODAJ TĘ LINIĘ
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -125,3 +128,19 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174", # <-- DODAJ TĘ LINIĘ
+    "http://127.0.0.1:5174", # <-- I TĘ, DLA PEWNOŚCI
+]
+
+# Na samym dole pliku core/settings.py
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication', # Dobrze zostawić, dla panelu admina
+    ],
+}

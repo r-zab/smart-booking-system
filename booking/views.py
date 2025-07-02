@@ -11,6 +11,9 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import viewsets, generics # <--- DODAJ generics
+from .serializers import ResourceSerializer, BookingSerializer, UserCreateSerializer
+from django.contrib.auth.models import User # <--- DODAJ IMPORT User
 
 # --- Imports z naszej aplikacji ---
 from .analysis import prepare_booking_data, train_prediction_model, get_future_predictions
@@ -39,11 +42,17 @@ class BookingViewSet(viewsets.ModelViewSet):
     """
     A ViewSet for viewing and editing Bookings.
     """
-    queryset = Booking.objects.all().order_by('start_time')
+    queryset = Booking.objects.all().order_by('start_time') # Tę linię możemy usunąć lub zostawić
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
 
-    # === DODAJ TĘ METODĘ PONIŻEJ ===
+
+    def get_queryset(self):
+        """
+        Ta metoda filtruje rezerwacje tak, aby użytkownik widział tylko swoje.
+        """
+        user = self.request.user
+        return Booking.objects.filter(user=user).order_by('-start_time')
     def perform_create(self, serializer):
         """
         Automatically assign the logged-in user to the booking.
@@ -161,3 +170,8 @@ class ChatbotAPIView(APIView):
         }
 
         return Response(response_data)
+
+class UserCreateAPIView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserCreateSerializer
+    permission_classes = [] # Pusta lista oznacza, że endpoint jest publiczny
