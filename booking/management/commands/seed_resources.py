@@ -1,4 +1,4 @@
-from django.core.management.base import BaseCommand
+from djasngo.core.management.base import BaseCommand
 from booking.models import Resource
 
 class Command(BaseCommand):
