@@ -1,4 +1,4 @@
-from djasngo.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand
 from booking.models import Resource
 
 class Command(BaseCommand):
@@ -7,7 +7,6 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write('Seeding resources...')
 
-        # Lista predefiniowanych zasobów do stworzenia
         RESOURCES = [
             {'name': "Sala Konferencyjna 'Jupiter'", 'description': 'Główna, reprezentacyjna sala na 1 piętrze.', 'capacity': 20},
             {'name': "Sala Spotkań 'Mars'", 'description': 'Standardowa sala spotkań z TV 65 cali i whiteboardem.', 'capacity': 8},
@@ -33,8 +32,6 @@ class Command(BaseCommand):
 
         created_count = 0
         for resource_data in RESOURCES:
-            # Używamy get_or_create, aby uniknąć tworzenia duplikatów
-            # Sprawdza, czy zasób o danej nazwie już istnieje. Jeśli nie, tworzy go.
             resource, created = Resource.objects.get_or_create(
                 name=resource_data['name'],
                 defaults={

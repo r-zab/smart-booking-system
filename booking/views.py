@@ -1,113 +1,89 @@
-# booking/views.py
-
-# --- Imports z bibliotek standardowych ---
 import re
 from datetime import date
 
-# --- Imports z bibliotek firm trzecich ---
+from django.utils import timezone
 from dateparser.search import search_dates
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import viewsets, generics # <--- DODAJ generics
+from rest_framework import viewsets, generics
 from .serializers import ResourceSerializer, BookingSerializer, UserCreateSerializer
-from django.contrib.auth.models import User # <--- DODAJ IMPORT User
+from django.contrib.auth.models import User
 
-# --- Imports z naszej aplikacji ---
 from .analysis import prepare_booking_data, train_prediction_model, get_future_predictions
 from .models import Resource, Booking
 from .serializers import ResourceSerializer, BookingSerializer
 
-class ResourceViewSet(viewsets.ModelViewSet):  # <--- JEDYNA ZMIANA JEST TUTAJ
-    """
-    A ViewSet for viewing Resources.
-    It automatically provides `list` and `retrieve` actions.
-    """
+class ResourceViewSet(viewsets.ModelViewSet):
     queryset = Resource.objects.all().order_by('id')
     serializer_class = ResourceSerializer
 
     @action(detail=False, methods=['get'])
     def latest(self, request):
-        """
-        A custom action to get the 5 latest resources.
-        """
         latest_resources = Resource.objects.order_by('-id')[:5]
         serializer = self.get_serializer(latest_resources, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['get'])
+    def schedule(self, request, pk=None):
+
+        resource = self.get_object()
+        start_of_today = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        bookings = resource.bookings.filter(
+            end_time__gte=start_of_today
+        ).order_by('start_time')
+
+        serializer = BookingSerializer(bookings, many=True)
+        return Response(serializer.data)
+
 
 class BookingViewSet(viewsets.ModelViewSet):
-    """
-    A ViewSet for viewing and editing Bookings.
-    """
-    queryset = Booking.objects.all().order_by('start_time') # Tę linię możemy usunąć lub zostawić
+    queryset = Booking.objects.all().order_by('start_time')
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
 
-
     def get_queryset(self):
-        """
-        Ta metoda filtruje rezerwacje tak, aby użytkownik widział tylko swoje.
-        """
         user = self.request.user
         return Booking.objects.filter(user=user).order_by('-start_time')
+
     def perform_create(self, serializer):
-        """
-        Automatically assign the logged-in user to the booking.
-        """
         serializer.save(user=self.request.user)
 
 
-# === DODAJ TEN NOWY WIDOK NA DOLE ===
 class BookingDemandPredictionAPIView(APIView):
-    """
-    Zwraca prognozę zapotrzebowania na rezerwacje na następne 7 dni.
-    """
-    permission_classes = [IsAuthenticated]  # Od razu zabezpieczamy endpoint
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        # Krok 1: Przygotuj dane z bazy
         booking_data = prepare_booking_data()
 
         if booking_data.empty or len(booking_data) < 2:
-            # Zwracamy błąd, jeśli nie ma danych do analizy
             return Response({"error": "Brak wystarczających danych do stworzenia prognozy."}, status=400)
 
-        # Krok 2: Wytrenuj model
         model = train_prediction_model(booking_data)
 
         if model is None:
-            # Zwracamy błąd, jeśli trenowanie się nie powiodło
             return Response({"error": "Nie udało się wytrenować modelu predykcyjnego."}, status=500)
 
-        # Krok 3: Wygeneruj prognozę na następne 7 dni
         predictions = get_future_predictions(model, days_to_predict=7)
 
-        # Zwróć prognozę jako odpowiedź JSON
         return Response(predictions)
 
 
-# ... istniejące importy i klasy ...
-
-# === DODAJ TEN NOWY WIDOK NA DOLE ===
 class ChatbotAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # nlp = spacy.load... <- możemy usunąć lub zostawić, nie będziemy go już tu używać
-
-    # === ZASTĄP STARĄ METODĘ POST TĄ PONIŻEJ ===
     def post(self, request, *args, **kwargs):
         user_message_original = request.data.get('message', '')
         if not user_message_original:
             return Response({'error': 'Wiadomość nie może być pusta.'}, status=400)
 
-        # Normalizacja tekstu i wyszukiwanie słów kluczowych (bez zmian)
         def normalize_text(text):
             return re.sub(r"[^\w\s]", '', text.lower())
 
-        user_keywords = set(normalize_text(user_message_original).split())
+        user_message_normalized = normalize_text(user_message_original)
+        user_keywords = set(user_message_normalized.split())
 
         best_match = None
         highest_score = 0
@@ -120,58 +96,51 @@ class ChatbotAPIView(APIView):
 
         found_resource = best_match
 
-        # Rozpoznawanie daty (bez zmian)
-        parsed_date_list = search_dates(user_message_original, languages=['pl'],
-                                        settings={'PREFER_DATES_FROM': 'future'})
-        found_date_str = None
-        if parsed_date_list:
-            found_date_str = parsed_date_list[0][1].strftime('%Y-%m-%d')
+        parsed_date_list = search_dates(
+            user_message_original,
+            languages=['pl'],
+            settings={'PREFER_DATES_FROM': 'future', 'RETURN_AS_TIMEZONE_AWARE': True}
+        )
 
-        # --- NOWA LOGIKA: SPRAWDZANIE BAZY DANYCH I ODPOWIADANIE ---
+        found_datetime = parsed_date_list[0][1] if parsed_date_list else None
 
         bot_response_text = ""
 
-        if found_resource and found_date_str:
-            # Udało się zidentyfikować zasób ORAZ datę
-            check_date = date.fromisoformat(found_date_str)
-
-            # Szukamy rezerwacji dla danego zasobu w danym dniu
-            bookings_on_day = Booking.objects.filter(
+        if found_resource and found_datetime:
+            conflicting_booking = Booking.objects.filter(
                 resource=found_resource,
-                start_time__date=check_date
-            ).order_by('start_time')
+                start_time__lt=found_datetime,
+                end_time__gt=found_datetime
+            ).first()
 
-            if not bookings_on_day.exists():
-                bot_response_text = f"Wygląda na to, że zasób '{found_resource.name}' jest całkowicie wolny w dniu {found_date_str}."
+            if conflicting_booking:
+                local_tz = timezone.get_current_timezone()
+                local_start = conflicting_booking.start_time.astimezone(local_tz)
+                local_end = conflicting_booking.end_time.astimezone(local_tz)
+
+                bot_response_text = (
+                    f"Niestety, o tej porze zasób '{found_resource.name}' jest już zajęty. "
+                    f"Istnieje rezerwacja od {local_start.strftime('%H:%M')} do {local_end.strftime('%H:%M')}."
+                )
             else:
-                response_lines = [f"W dniu {found_date_str} zasób '{found_resource.name}' ma następujące rezerwacje:"]
-                for booking in bookings_on_day:
-                    start = booking.start_time.strftime('%H:%M')
-                    end = booking.end_time.strftime('%H:%M')
-                    response_lines.append(f"- od {start} do {end} ('{booking.title}')")
-                bot_response_text = "\n".join(response_lines)
+                bot_response_text = f"Wygląda na to, że o tej porze zasób '{found_resource.name}' jest dostępny."
 
         elif found_resource:
-            # Udało się zidentyfikować tylko zasób
-            bot_response_text = f"Zrozumiałem, że pytasz o zasób '{found_resource.name}', ale nie podałeś daty. Spróbuj doprecyzować, np. 'jutro' lub '25 czerwca'."
+            bot_response_text = f"Zrozumiałem, że pytasz o zasób '{found_resource.name}', ale nie podałeś daty i godziny. Spróbuj doprecyzować."
         else:
-            # Nie udało się zidentyfikować niczego
-            bot_response_text = "Niestety, nie zrozumiałem o jaki zasób pytasz. Spróbuj podać bardziej konkretną nazwę."
+            bot_response_text = "Niestety, nie zrozumiałem o jaki zasób pytasz."
 
-        # --- Przygotowanie finalnej odpowiedzi ---
         response_data = {
             "original_message": user_message_original,
             "understood_entities": {
                 "resource_name": found_resource.name if found_resource else None,
-                "resource_id": found_resource.id if found_resource else None,
-                "date": found_date_str
+                "date_time": found_datetime.isoformat() if found_datetime else None,
             },
-            "bot_response": bot_response_text  # <--- Nasza nowa, wygenerowana odpowiedź
+            "bot_response": bot_response_text
         }
-
         return Response(response_data)
 
 class UserCreateAPIView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserCreateSerializer
-    permission_classes = [] # Pusta lista oznacza, że endpoint jest publiczny
+    permission_classes = []
