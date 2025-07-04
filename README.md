@@ -12,7 +12,9 @@ zapotrzebowania oraz interakcji z użytkownikiem w języku naturalnym.
 Całość jest w pełni **skonteneryzowana przy użyciu Dockera**, co zapewnia spójność środowiska i łatwość wdrożenia.
 
 ---
+**Link do repozytorium frontendu:** [smart-booking-frontend (Vue.js UI)](https://github.com/r-zab/smart-booking-frontend)
 
+---
 ## O Projekcie
 
 Celem tego projektu było stworzenie solidnego i skalowalnego systemu backendowego, który odzwierciedla realne wyzwania
